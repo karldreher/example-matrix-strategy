@@ -32,6 +32,13 @@ In the second line, things get a little more complicated; we're using `jq` to pu
 
 **This structure is important**, because the downstream "Job 2" will use the `fromJSON` expression to unpack these.  Especially because our `ls` output is newline-separated, JSON is probably the easiest way for us to get the data from one place to another.  There are other approaches, but Actions is generally speaking expecting an array e.g. `["item-1", "item-2"]`.  (What makes it a matrix is usually 2 or more arrays together, this concept is not explained here)
 
+After creating a portable structure, this is sent to `$GITHUB_OUTPUT` in order to be used in later jobs.  This needs to be specified as a Job output once that is done:
+
+```yaml
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+```
+
 ## Example - Matrix Strategy (Job 2)
 
 The matrix strategy itself is relatively easy to implement, once the output is in a predictable format.
