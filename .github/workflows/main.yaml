@@ -1,0 +1,38 @@
+on:
+  workflow_dispatch:
+
+jobs:
+  createMatrix:
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Generate Matrix
+      id: matrix
+      run: |
+        paths=$(ls -d */)
+        values=$(jq -n --arg array "${paths}" '$array | split("\n")')
+        echo matrix=${values} >> $GITHUB_OUTPUT
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+  use-matrix:
+    runs-on: ubuntu-22.04
+    needs: [ createMatrix ]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix.outputs.matrix) }}
+
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Echo the output
+      run: echo ${{ env.MATRIX_PATH }}
+
+    - name: Cat the file
+      run: cat ${{ matrix.paths }}/file.txt
