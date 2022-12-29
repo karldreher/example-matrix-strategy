@@ -37,4 +37,4 @@ jobs:
       run: echo ${{ env.MATRIX_PATH }}
 
     - name: Cat the file
-      run: cat ${{ matrix.paths }}/file.txt
+      run: cat ${{ matrix.paths }}file.txt
