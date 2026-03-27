@@ -1,40 +1,206 @@
+name: Dynamic Matrix Example
+
 on:
   workflow_dispatch:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  createMatrix:
-    runs-on: ubuntu-22.04
+  # ── Matrix Generation: jq (recommended) ──────────────────────────
+  createMatrix_jq:
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Generate Matrix
         id: matrix
         run: |
-          paths=$(ls -d */)
-          values=$(jq -n --arg array "${paths}" '$array | split("\n")')
-          echo matrix=${values} >> $GITHUB_OUTPUT
+          start=$(date +%s%3N)
+          echo "matrix=$(ls -d example_*/ | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
 
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
-  use-matrix:
-    runs-on: ubuntu-22.04
-    needs: [createMatrix]
-    strategy:
-      matrix:
-        paths: ${{ fromJson(needs.createMatrix.outputs.matrix) }}
-
-    env:
-      MATRIX_PATH: ${{ matrix.paths }}
-
+  # ── Matrix Generation: pure bash ─────────────────────────────────
+  createMatrix_bash:
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
+      - name: Generate Matrix
+        id: matrix
+        run: |
+          start=$(date +%s%3N)
+          dirs=(example_*/)
+          printf -v items ',"%s"' "${dirs[@]}"
+          echo "matrix=[${items:1}]" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+  # ── Matrix Generation: Node.js ───────────────────────────────────
+  createMatrix_node:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Generate Matrix
+        id: matrix
+        run: |
+          start=$(date +%s%3N)
+          matrix=$(node -e "
+            const fs = require('fs');
+            const dirs = fs.readdirSync('.')
+              .filter(f => fs.statSync(f).isDirectory() && f.startsWith('example_'))
+              .map(f => f + '/');
+            console.log(JSON.stringify(dirs));
+          ")
+          echo "matrix=${matrix}" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+  # ── Matrix Generation: Bun ───────────────────────────────────────
+  createMatrix_bun:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Generate Matrix
+        id: matrix
+        run: |
+          start=$(date +%s%3N)
+          matrix=$(bun -e "
+            import { readdirSync, statSync } from 'fs';
+            const dirs = readdirSync('.')
+              .filter(f => statSync(f).isDirectory() && f.startsWith('example_'))
+              .map(f => f + '/');
+            console.log(JSON.stringify(dirs));
+          ")
+          echo "matrix=${matrix}" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+  # ── Matrix Generation: ripgrep ───────────────────────────────────
+  createMatrix_ripgrep:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Generate Matrix
+        id: matrix
+        run: |
+          start=$(date +%s%3N)
+          echo "matrix=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+  # ── Consumer: jq ─────────────────────────────────────────────────
+  use_matrix_jq:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_jq]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_jq.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
       - name: Echo the output
-        run: echo ${{ env.MATRIX_PATH }}
-
+        run: echo "${MATRIX_PATH}"
       - name: Cat the file
-        run: cat ${{ matrix.paths }}file.txt
+        run: cat "${MATRIX_PATH}file.txt"
+
+  # ── Consumer: bash ───────────────────────────────────────────────
+  use_matrix_bash:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_bash]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_bash.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Echo the output
+        run: echo "${MATRIX_PATH}"
+      - name: Cat the file
+        run: cat "${MATRIX_PATH}file.txt"
+
+  # ── Consumer: Node.js ────────────────────────────────────────────
+  use_matrix_node:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_node]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_node.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Echo the output
+        run: echo "${MATRIX_PATH}"
+      - name: Cat the file
+        run: cat "${MATRIX_PATH}file.txt"
+
+  # ── Consumer: Bun ────────────────────────────────────────────────
+  use_matrix_bun:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_bun]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_bun.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Echo the output
+        run: echo "${MATRIX_PATH}"
+      - name: Cat the file
+        run: cat "${MATRIX_PATH}file.txt"
+
+  # ── Consumer: ripgrep ────────────────────────────────────────────
+  use_matrix_ripgrep:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_ripgrep]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_ripgrep.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Echo the output
+        run: echo "${MATRIX_PATH}"
+      - name: Cat the file
+        run: cat "${MATRIX_PATH}file.txt"
