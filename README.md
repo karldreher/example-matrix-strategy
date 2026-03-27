@@ -1,66 +1,147 @@
 # example-matrix-strategy
 
-This repo contains a simple example of how to compose a **dynamic** matrix strategy using Github Actions.  It is appropriate for use in monorepos, and other situations where "less-is-more" to avoid refactoring later.
+This repo demonstrates how to build a **dynamic** matrix strategy in GitHub Actions using only tools that are pre-installed on the runner. No third-party actions required beyond `actions/checkout`. It is appropriate for monorepos and other situations where you want to discover work dynamically instead of hardcoding it.
 
-Please feel free to review the [workflow](https://github.com/karldreher/example-matrix-strategy/blob/main/.github/workflows/main.yaml) and [Actions history](https://github.com/karldreher/example-matrix-strategy/actions) while following along with this example, to gain a better understanding of matrix strategy in general, as well as how to dynamically create one.
+The 2026 edition turns this into a **shootout** — five different approaches to matrix generation, each running as its own job, so you can compare simplicity, speed, and overhead directly in the [Actions UI](https://github.com/karldreher/example-matrix-strategy/actions).
 
-# Example
+## How It Works
 
-This is a simple example, which will help you understand a more complex concept.
+The pattern has two jobs:
 
-In this repo there are two folders, "example_1" and "example_2".
-We're going to use `ls` to gather these folders to construct our matrix.
+1. **Generate** — discover directories and output a JSON array
+2. **Consume** — use `strategy.matrix` with `fromJson` to fan out into parallel jobs
 
-## Example - Matrix Generation (Job 1)
+### Job 1: Matrix Generation
 
-Here, we will review the generation of the matrix.
+The recommended approach uses `ls` and `jq`, both pre-installed on `ubuntu-24.04`:
 
 ```bash
-        paths=$(ls -d */)
-        values=$(jq -n --arg array "${paths}" '$array | split("\n")')
-        echo matrix=${values} >> $GITHUB_OUTPUT
+echo "matrix=$(ls -d example_*/ | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
 ```
-In the first line, we are using an `ls` primitive to gather the paths.
-In the second line, things get a little more complicated; we're using `jq` to put these into an array which will look like this when it's done:
+
+Breaking this down:
+- `ls -d example_*/` lists directories matching the glob
+- `jq -Rnc '[inputs]'` reads each line as raw text (`-R`), collects them into an array via null input + `inputs` (`-n`), and outputs compact JSON (`-c`)
+
+The result is a JSON array sent to `$GITHUB_OUTPUT` for downstream jobs:
 
 ```json
-[
-  "example_1/",
-  "example_2/"
-]
+["example_1/","example_2/"]
 ```
 
-**This structure is important**, because the downstream "Job 2" will use the `fromJSON` expression to unpack these.  Especially because our `ls` output is newline-separated, JSON is probably the easiest way for us to get the data from one place to another.  There are other approaches, but Actions is generally speaking expecting an array e.g. `["item-1", "item-2"]`.  (What makes it a matrix is usually 2 or more arrays together, this concept is not explained here)
-
-After creating a portable structure, this is sent to `$GITHUB_OUTPUT` in order to be used in later jobs.  This needs to be specified as a Job output once that is done:
+This is then declared as a job output:
 
 ```yaml
-    outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
+outputs:
+  matrix: ${{ steps.matrix.outputs.matrix }}
 ```
 
-## Example - Matrix Strategy (Job 2)
+### Job 2: Matrix Consumption
 
-The matrix strategy itself is relatively easy to implement, once the output is in a predictable format.
-
-Matrix strategy is implemented at a **Job level**, so it is advantageous to separate the generation and consumption of the matrix.  Actually based on our actions, matrix strategy will fork into the number of jobs specified.
+Matrix strategy is implemented at the **job level**. The consumer job unpacks the JSON array with `fromJson` and fans out — one job per array item:
 
 ```yaml
-  use-matrix:
-    runs-on: ubuntu-22.04
-    needs: [ createMatrix ]
-    strategy:
-      matrix:
-        paths: ${{ fromJson(needs.createMatrix.outputs.matrix) }}
-
-    env:
-      MATRIX_PATH: ${{ matrix.paths }}
+use_matrix_jq:
+  runs-on: ubuntu-24.04
+  needs: [createMatrix_jq]
+  strategy:
+    matrix:
+      paths: ${{ fromJson(needs.createMatrix_jq.outputs.matrix) }}
+  env:
+    MATRIX_PATH: ${{ matrix.paths }}
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Echo the output
+      run: echo "${MATRIX_PATH}"
+    - name: Cat the file
+      run: cat "${MATRIX_PATH}file.txt"
 ```
 
-Here, after constructing the matrix based on the output of the last job, we just need to reference `${{ matrix.paths }}` anywhere that we want to reuse the items in the array.  As demonstrated in this workflow, you could set this to an environment variable or compose other actions, but pretty much anything in the context of the Job could take advantage of this as a variable.
+You can reference `${{ matrix.paths }}` anywhere in the job context — environment variables, step inputs, etc.
 
-### References
+### Security: Expression Injection
 
-- https://tomasvotruba.com/blog/2020/11/16/how-to-make-dynamic-matrix-in-github-actions/
+Notice that `run:` steps use the shell variable `"${MATRIX_PATH}"` rather than directly interpolating `${{ matrix.paths }}`. This avoids [script injection](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections) — a common pitfall where expressions are interpolated into the shell script *before* the shell executes, allowing crafted values to break out of the intended command.
 
-- https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
+Setting the value as an `env:` variable at the job level and referencing it as `"${MATRIX_PATH}"` in `run:` steps is the recommended pattern.
+
+## The Shootout
+
+The [workflow](.github/workflows/main.yaml) implements five different approaches to matrix generation. Each runs as its own job with its own consumer, so you can compare them end-to-end in the Actions UI.
+
+### jq (Recommended)
+
+Pre-installed on `ubuntu-24.04`. One line. Purpose-built for JSON.
+
+```bash
+echo "matrix=$(ls -d example_*/ | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+```
+
+### Pure Bash
+
+Zero external tools — shell builtins only. Works well for controlled directory names but fragile with special characters.
+
+```bash
+dirs=(example_*/)
+printf -v items ',"%s"' "${dirs[@]}"
+echo "matrix=[${items:1}]" >> $GITHUB_OUTPUT
+```
+
+### Node.js
+
+Pre-installed on `ubuntu-24.04` (Node 20). More verbose but familiar to JavaScript teams.
+
+```bash
+matrix=$(node -e "
+  const fs = require('fs');
+  const dirs = fs.readdirSync('.')
+    .filter(f => fs.statSync(f).isDirectory() && f.startsWith('example_'))
+    .map(f => f + '/');
+  console.log(JSON.stringify(dirs));
+")
+echo "matrix=${matrix}" >> $GITHUB_OUTPUT
+```
+
+### Bun
+
+**Not pre-installed** — requires the [`oven-sh/setup-bun`](https://github.com/oven-sh/setup-bun) action. This demonstrates the overhead of adding a non-pre-installed tool: the setup step downloads and installs Bun before the generation command can run.
+
+```bash
+matrix=$(bun -e "
+  import { readdirSync, statSync } from 'fs';
+  const dirs = readdirSync('.')
+    .filter(f => statSync(f).isDirectory() && f.startsWith('example_'))
+    .map(f => f + '/');
+  console.log(JSON.stringify(dirs));
+")
+echo "matrix=${matrix}" >> $GITHUB_OUTPUT
+```
+
+### ripgrep
+
+**Not pre-installed** — requires `apt-get install`. ripgrep is a content search tool, not a directory lister, so this is deliberately using the wrong tool for the job. It still needs `jq` for JSON construction, and the install step adds significant overhead.
+
+```bash
+echo "matrix=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+```
+
+### Results
+
+| Approach | Pre-installed | Lines of Shell | Job Duration | Notes |
+|----------|---------------|----------------|--------------|-------|
+| jq       | Yes           | 1              | TODO         | Recommended. Purpose-built for JSON |
+| bash     | Yes (builtin) | 3              | TODO         | Zero dependencies, fragile with special chars |
+| Node.js  | Yes           | ~5             | TODO         | Familiar to JS teams |
+| Bun      | No            | ~5 + setup     | TODO         | Requires `oven-sh/setup-bun` action |
+| ripgrep  | No            | ~3 + install   | TODO         | Content search tool; still needs jq for JSON |
+
+## Alternatives Not Shown
+
+[**dorny/paths-filter**](https://github.com/dorny/paths-filter) is a popular, feature-rich action for filtering changed paths. It's a great tool for complex filtering scenarios, but it adds the overhead of downloading and executing a third-party action. For simple directory enumeration like this example, pre-installed CLI tools are faster and have zero external dependencies.
+
+## References
+
+- [Using a matrix for your jobs](https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs) — GitHub's official matrix strategy documentation
+- [Security hardening for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions) — expression injection and other security considerations
+- [How to Make Dynamic Matrix in GitHub Actions](https://tomasvotruba.com/blog/2020/11/16/how-to-make-dynamic-matrix-in-github-actions/) — original inspiration (2020, may reference deprecated syntax like `::set-output`)
