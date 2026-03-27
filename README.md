@@ -128,13 +128,15 @@ echo "matrix=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rn
 
 ### Results
 
-| Approach | Pre-installed | Lines of Shell | Job Duration | Notes |
-|----------|---------------|----------------|--------------|-------|
-| jq       | Yes           | 1              | TODO         | Recommended. Purpose-built for JSON |
-| bash     | Yes (builtin) | 3              | TODO         | Zero dependencies, fragile with special chars |
-| Node.js  | Yes           | ~5             | TODO         | Familiar to JS teams |
-| Bun      | No            | ~5 + setup     | TODO         | Requires `oven-sh/setup-bun` action |
-| ripgrep  | No            | ~3 + install   | TODO         | Content search tool; still needs jq for JSON |
+| Approach | Pre-installed | Lines of Shell | Command Time | Job Duration | Notes |
+|----------|---------------|----------------|--------------|--------------|-------|
+| jq       | Yes           | 1              | 5ms          | 5s           | Recommended. Purpose-built for JSON |
+| bash     | Yes (builtin) | 3              | 2ms          | 3s           | Zero dependencies, fragile with special chars |
+| Node.js  | Yes           | ~5             | 69ms         | 4s           | Familiar to JS teams |
+| Bun      | No            | ~5 + setup     | 22ms         | 8s           | Requires `oven-sh/setup-bun` action |
+| ripgrep  | No            | ~3 + install   | 7ms          | 15s          | Content search tool; still needs jq for JSON |
+
+> **Command Time** = just the matrix generation command. **Job Duration** = total job wall time including checkout, setup/install, and generation. Measured on `ubuntu-24.04` runners, March 2026.
 
 ## Alternatives Not Shown
 
