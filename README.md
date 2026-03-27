@@ -2,51 +2,73 @@
 
 This repo demonstrates how to build a **dynamic** matrix strategy in GitHub Actions using only tools that are pre-installed on the runner. No third-party actions required beyond `actions/checkout`. It is appropriate for monorepos and other situations where you want to discover work dynamically instead of hardcoding it.
 
-The 2026 edition turns this into a **shootout** — five different approaches to matrix generation, each running as its own job, so you can compare simplicity, speed, and overhead directly in the [Actions UI](https://github.com/karldreher/example-matrix-strategy/actions).
+The 2026 edition is a **matrix of matrices** — a static matrix over tools feeds a dynamically-generated matrix over paths. Five different approaches to matrix generation run as cells in a single job, so you can compare simplicity, speed, and overhead directly in the [Actions UI](https://github.com/karldreher/example-matrix-strategy/actions).
 
 ## How It Works
 
-The pattern has two jobs:
+The workflow has two jobs, each with its own matrix strategy:
 
-1. **Generate** — discover directories and output a JSON array
-2. **Consume** — use `strategy.matrix` with `fromJson` to fan out into parallel jobs
+1. **`generate`** — a **static** matrix over tools (`jq`, `bash`, `node`, `bun`, `ripgrep`). Each cell discovers directories and outputs the same JSON array using a different approach.
+2. **`consume`** — a **dynamic** matrix over paths, built from the output of `generate`. Fans out into one job per directory.
 
-### Job 1: Matrix Generation
+This is the "matrix of matrices" pattern: Job 1's matrix is hardcoded in the workflow, but Job 2's matrix is constructed at runtime from Job 1's output.
 
-The recommended approach uses `ls` and `jq`, both pre-installed on `ubuntu-24.04`:
+### Job 1: Generate (static tool matrix)
 
-```bash
-echo "matrix=$(ls -d example_*/ | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+The generator job uses `strategy.matrix.tool` to run five approaches in parallel. A `case` statement picks the right command for each tool:
+
+```yaml
+generate:
+  runs-on: ubuntu-24.04
+  strategy:
+    matrix:
+      tool: [jq, bash, node, bun, ripgrep]
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Bun
+      if: matrix.tool == 'bun'
+      uses: oven-sh/setup-bun@v2
+
+    - name: Install ripgrep
+      if: matrix.tool == 'ripgrep'
+      run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+    - name: Generate Matrix
+      id: matrix
+      env:
+        TOOL: ${{ matrix.tool }}
+      run: |
+        case "${TOOL}" in
+          jq)      result=$(ls -d example_*/ | jq -Rnc '[inputs]') ;;
+          bash)    dirs=(example_*/); printf -v items ',"%s"' "${dirs[@]}"; result="[${items:1}]" ;;
+          node)    result=$(node -e "...") ;;
+          bun)     result=$(bun -e "...") ;;
+          ripgrep) result=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rnc '[inputs]') ;;
+        esac
+        echo "matrix=${result}" >> $GITHUB_OUTPUT
 ```
 
-Breaking this down:
-- `ls -d example_*/` lists directories matching the glob
-- `jq -Rnc '[inputs]'` reads each line as raw text (`-R`), collects them into an array via null input + `inputs` (`-n`), and outputs compact JSON (`-c`)
-
-The result is a JSON array sent to `$GITHUB_OUTPUT` for downstream jobs:
+Every cell produces the same JSON array — the last cell to finish sets the job output:
 
 ```json
 ["example_1/","example_2/"]
 ```
 
-This is then declared as a job output:
+Conditional `if:` steps handle tool installation only when needed. Bun requires the `oven-sh/setup-bun` action; ripgrep requires `apt-get install`. The other three tools are pre-installed on `ubuntu-24.04`.
+
+### Job 2: Consume (dynamic paths matrix)
+
+The consumer job unpacks the JSON array with `fromJson` and fans out — one job per directory:
 
 ```yaml
-outputs:
-  matrix: ${{ steps.matrix.outputs.matrix }}
-```
-
-### Job 2: Matrix Consumption
-
-Matrix strategy is implemented at the **job level**. The consumer job unpacks the JSON array with `fromJson` and fans out — one job per array item:
-
-```yaml
-use_matrix_jq:
+consume:
   runs-on: ubuntu-24.04
-  needs: [createMatrix_jq]
+  needs: [generate]
   strategy:
     matrix:
-      paths: ${{ fromJson(needs.createMatrix_jq.outputs.matrix) }}
+      paths: ${{ fromJson(needs.generate.outputs.matrix) }}
   env:
     MATRIX_PATH: ${{ matrix.paths }}
   steps:
@@ -62,20 +84,20 @@ You can reference `${{ matrix.paths }}` anywhere in the job context — environm
 
 ### Security: Expression Injection
 
-Notice that `run:` steps use the shell variable `"${MATRIX_PATH}"` rather than directly interpolating `${{ matrix.paths }}`. This avoids [script injection](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections) — a common pitfall where expressions are interpolated into the shell script *before* the shell executes, allowing crafted values to break out of the intended command.
+Notice that `run:` steps use shell variables (`"${MATRIX_PATH}"`, `"${TOOL}"`) rather than directly interpolating `${{ matrix.paths }}` or `${{ matrix.tool }}`. This avoids [script injection](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections) — a common pitfall where expressions are interpolated into the shell script *before* the shell executes, allowing crafted values to break out of the intended command.
 
-Setting the value as an `env:` variable at the job level and referencing it as `"${MATRIX_PATH}"` in `run:` steps is the recommended pattern.
+Setting values as `env:` variables and referencing them as shell variables in `run:` steps is the recommended pattern.
 
 ## The Shootout
 
-The [workflow](.github/workflows/main.yaml) implements five different approaches to matrix generation. Each runs as its own job with its own consumer, so you can compare them end-to-end in the Actions UI.
+Each cell in the `generate` job's tool matrix runs a different approach. You can compare their timing directly in the Actions UI matrix view.
 
 ### jq (Recommended)
 
 Pre-installed on `ubuntu-24.04`. One line. Purpose-built for JSON.
 
 ```bash
-echo "matrix=$(ls -d example_*/ | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+result=$(ls -d example_*/ | jq -Rnc '[inputs]')
 ```
 
 ### Pure Bash
@@ -85,7 +107,7 @@ Zero external tools — shell builtins only. Works well for controlled directory
 ```bash
 dirs=(example_*/)
 printf -v items ',"%s"' "${dirs[@]}"
-echo "matrix=[${items:1}]" >> $GITHUB_OUTPUT
+result="[${items:1}]"
 ```
 
 ### Node.js
@@ -93,14 +115,13 @@ echo "matrix=[${items:1}]" >> $GITHUB_OUTPUT
 Pre-installed on `ubuntu-24.04` (Node 20). More verbose but familiar to JavaScript teams.
 
 ```bash
-matrix=$(node -e "
+result=$(node -e "
   const fs = require('fs');
   const dirs = fs.readdirSync('.')
     .filter(f => fs.statSync(f).isDirectory() && f.startsWith('example_'))
     .map(f => f + '/');
   console.log(JSON.stringify(dirs));
 ")
-echo "matrix=${matrix}" >> $GITHUB_OUTPUT
 ```
 
 ### Bun
@@ -108,14 +129,13 @@ echo "matrix=${matrix}" >> $GITHUB_OUTPUT
 **Not pre-installed** — requires the [`oven-sh/setup-bun`](https://github.com/oven-sh/setup-bun) action. This demonstrates the overhead of adding a non-pre-installed tool: the setup step downloads and installs Bun before the generation command can run.
 
 ```bash
-matrix=$(bun -e "
+result=$(bun -e "
   import { readdirSync, statSync } from 'fs';
   const dirs = readdirSync('.')
     .filter(f => statSync(f).isDirectory() && f.startsWith('example_'))
     .map(f => f + '/');
   console.log(JSON.stringify(dirs));
 ")
-echo "matrix=${matrix}" >> $GITHUB_OUTPUT
 ```
 
 ### ripgrep
@@ -123,7 +143,7 @@ echo "matrix=${matrix}" >> $GITHUB_OUTPUT
 **Not pre-installed** — requires `apt-get install`. ripgrep is a content search tool, not a directory lister, so this is deliberately using the wrong tool for the job. It still needs `jq` for JSON construction, and the install step adds significant overhead.
 
 ```bash
-echo "matrix=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+result=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rnc '[inputs]')
 ```
 
 ### Results
