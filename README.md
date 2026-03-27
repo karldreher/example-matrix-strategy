@@ -36,29 +36,31 @@ outputs:
   matrix: ${{ steps.matrix.outputs.matrix }}
 ```
 
-### Job 2: Matrix Consumption
+### Job 2: Matrix Consumption (2D matrix)
 
-Matrix strategy is implemented at the **job level**. The consumer job unpacks the JSON array with `fromJson` and fans out — one job per array item:
+The consumer is a single job with a **multi-dimensional matrix** — a static `tool` dimension crossed with the dynamic `paths` dimension. This produces `tool × paths` cells (5 × 2 = 10 in this repo):
 
 ```yaml
-use_matrix_jq:
+consume:
   runs-on: ubuntu-24.04
-  needs: [createMatrix_jq]
+  needs: [createMatrix_jq, createMatrix_bash, createMatrix_node, createMatrix_bun, createMatrix_ripgrep]
   strategy:
     matrix:
+      tool: [jq, bash, node, bun, ripgrep]
       paths: ${{ fromJson(needs.createMatrix_jq.outputs.matrix) }}
   env:
     MATRIX_PATH: ${{ matrix.paths }}
+    TOOL: ${{ matrix.tool }}
   steps:
     - name: Checkout
       uses: actions/checkout@v6
     - name: Echo the output
-      run: echo "${MATRIX_PATH}"
+      run: echo "${TOOL} — ${MATRIX_PATH}"
     - name: Cat the file
       run: cat "${MATRIX_PATH}file.txt"
 ```
 
-You can reference `${{ matrix.paths }}` anywhere in the job context — environment variables, step inputs, etc.
+The consumer waits for all five generators via `needs`, then fans out across both dimensions. You can reference any `matrix.*` value anywhere in the job context — environment variables, step inputs, etc.
 
 ### Security: Expression Injection
 
