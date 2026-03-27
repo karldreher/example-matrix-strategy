@@ -51,7 +51,7 @@ use_matrix_jq:
     MATRIX_PATH: ${{ matrix.paths }}
   steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Echo the output
       run: echo "${MATRIX_PATH}"
     - name: Cat the file

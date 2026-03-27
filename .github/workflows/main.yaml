@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Generate Matrix
         id: matrix
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Generate Matrix
         id: matrix
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Generate Matrix
         id: matrix
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
@@ -131,7 +131,7 @@ jobs:
       MATRIX_PATH: ${{ matrix.paths }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Echo the output
         run: echo "${MATRIX_PATH}"
       - name: Cat the file
@@ -148,7 +148,7 @@ jobs:
       MATRIX_PATH: ${{ matrix.paths }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Echo the output
         run: echo "${MATRIX_PATH}"
       - name: Cat the file
@@ -165,7 +165,7 @@ jobs:
       MATRIX_PATH: ${{ matrix.paths }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Echo the output
         run: echo "${MATRIX_PATH}"
       - name: Cat the file
@@ -182,7 +182,7 @@ jobs:
       MATRIX_PATH: ${{ matrix.paths }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Echo the output
         run: echo "${MATRIX_PATH}"
       - name: Cat the file
@@ -199,7 +199,7 @@ jobs:
       MATRIX_PATH: ${{ matrix.paths }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Echo the output
         run: echo "${MATRIX_PATH}"
       - name: Cat the file
