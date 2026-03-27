@@ -120,24 +120,87 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
-  # ── Consumer: 2D matrix (tool × paths) ────────────────────────────
-  # Collapses into a single job with a multi-dimensional matrix.
-  # The tool dimension is static; the paths dimension is dynamic
-  # from the generator output. Results in tool × paths cells.
-  consume:
+  # ── Consumer: jq ─────────────────────────────────────────────────
+  use_matrix_jq:
     runs-on: ubuntu-24.04
-    needs: [createMatrix_jq, createMatrix_bash, createMatrix_node, createMatrix_bun, createMatrix_ripgrep]
+    needs: [createMatrix_jq]
     strategy:
       matrix:
-        tool: [jq, bash, node, bun, ripgrep]
         paths: ${{ fromJson(needs.createMatrix_jq.outputs.matrix) }}
     env:
       MATRIX_PATH: ${{ matrix.paths }}
-      TOOL: ${{ matrix.tool }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Echo the output
-        run: echo "${TOOL} — ${MATRIX_PATH}"
+        run: echo "${MATRIX_PATH}"
+      - name: Cat the file
+        run: cat "${MATRIX_PATH}file.txt"
+
+  # ── Consumer: bash ───────────────────────────────────────────────
+  use_matrix_bash:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_bash]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_bash.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Echo the output
+        run: echo "${MATRIX_PATH}"
+      - name: Cat the file
+        run: cat "${MATRIX_PATH}file.txt"
+
+  # ── Consumer: Node.js ────────────────────────────────────────────
+  use_matrix_node:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_node]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_node.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Echo the output
+        run: echo "${MATRIX_PATH}"
+      - name: Cat the file
+        run: cat "${MATRIX_PATH}file.txt"
+
+  # ── Consumer: Bun ────────────────────────────────────────────────
+  use_matrix_bun:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_bun]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_bun.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Echo the output
+        run: echo "${MATRIX_PATH}"
+      - name: Cat the file
+        run: cat "${MATRIX_PATH}file.txt"
+
+  # ── Consumer: ripgrep ────────────────────────────────────────────
+  use_matrix_ripgrep:
+    runs-on: ubuntu-24.04
+    needs: [createMatrix_ripgrep]
+    strategy:
+      matrix:
+        paths: ${{ fromJson(needs.createMatrix_ripgrep.outputs.matrix) }}
+    env:
+      MATRIX_PATH: ${{ matrix.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Echo the output
+        run: echo "${MATRIX_PATH}"
       - name: Cat the file
         run: cat "${MATRIX_PATH}file.txt"
