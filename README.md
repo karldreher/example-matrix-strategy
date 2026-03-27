@@ -15,7 +15,7 @@ This is the "matrix of matrices" pattern: Job 1's matrix is hardcoded in the wor
 
 ### Job 1: Generate (static tool matrix)
 
-The generator job uses `strategy.matrix.tool` to run five approaches in parallel. A `case` statement picks the right command for each tool:
+The generator job uses `strategy.matrix.tool` to run five approaches in parallel. Each tool gets its own step, filtered with `if: matrix.tool == '...'`, all sharing the same `id: matrix` so the output reference stays consistent:
 
 ```yaml
 generate:
@@ -35,19 +35,22 @@ generate:
       if: matrix.tool == 'ripgrep'
       run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-    - name: Generate Matrix
+    - name: Generate Matrix (jq)
+      if: matrix.tool == 'jq'
       id: matrix
-      env:
-        TOOL: ${{ matrix.tool }}
-      run: |
-        case "${TOOL}" in
-          jq)      result=$(ls -d example_*/ | jq -Rnc '[inputs]') ;;
-          bash)    dirs=(example_*/); printf -v items ',"%s"' "${dirs[@]}"; result="[${items:1}]" ;;
-          node)    result=$(node -e "...") ;;
-          bun)     result=$(bun -e "...") ;;
-          ripgrep) result=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rnc '[inputs]') ;;
-        esac
-        echo "matrix=${result}" >> $GITHUB_OUTPUT
+      run: echo "matrix=$(ls -d example_*/ | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+
+    - name: Generate Matrix (bash)
+      if: matrix.tool == 'bash'
+      id: matrix
+      run: # ... pure bash JSON construction
+
+    - name: Generate Matrix (node)
+      if: matrix.tool == 'node'
+      id: matrix
+      run: # ... node -e with fs.readdirSync
+
+    # ... one step per tool, same id, same output key
 ```
 
 Every cell produces the same JSON array — the last cell to finish sets the job output:

@@ -28,44 +28,64 @@ jobs:
         if: matrix.tool == 'ripgrep'
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Generate Matrix
+      - name: Generate Matrix (jq)
+        if: matrix.tool == 'jq'
         id: matrix
-        env:
-          TOOL: ${{ matrix.tool }}
         run: |
           start=$(date +%s%3N)
-          case "${TOOL}" in
-            jq)
-              result=$(ls -d example_*/ | jq -Rnc '[inputs]')
-              ;;
-            bash)
-              dirs=(example_*/)
-              printf -v items ',"%s"' "${dirs[@]}"
-              result="[${items:1}]"
-              ;;
-            node)
-              result=$(node -e "
-                const fs = require('fs');
-                const dirs = fs.readdirSync('.')
-                  .filter(f => fs.statSync(f).isDirectory() && f.startsWith('example_'))
-                  .map(f => f + '/');
-                console.log(JSON.stringify(dirs));
-              ")
-              ;;
-            bun)
-              result=$(bun -e "
-                import { readdirSync, statSync } from 'fs';
-                const dirs = readdirSync('.')
-                  .filter(f => statSync(f).isDirectory() && f.startsWith('example_'))
-                  .map(f => f + '/');
-                console.log(JSON.stringify(dirs));
-              ")
-              ;;
-            ripgrep)
-              result=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rnc '[inputs]')
-              ;;
-          esac
-          echo "matrix=${result}" >> $GITHUB_OUTPUT
+          echo "matrix=$(ls -d example_*/ | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
+
+      - name: Generate Matrix (bash)
+        if: matrix.tool == 'bash'
+        id: matrix
+        run: |
+          start=$(date +%s%3N)
+          dirs=(example_*/)
+          printf -v items ',"%s"' "${dirs[@]}"
+          echo "matrix=[${items:1}]" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
+
+      - name: Generate Matrix (node)
+        if: matrix.tool == 'node'
+        id: matrix
+        run: |
+          start=$(date +%s%3N)
+          matrix=$(node -e "
+            const fs = require('fs');
+            const dirs = fs.readdirSync('.')
+              .filter(f => fs.statSync(f).isDirectory() && f.startsWith('example_'))
+              .map(f => f + '/');
+            console.log(JSON.stringify(dirs));
+          ")
+          echo "matrix=${matrix}" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
+
+      - name: Generate Matrix (bun)
+        if: matrix.tool == 'bun'
+        id: matrix
+        run: |
+          start=$(date +%s%3N)
+          matrix=$(bun -e "
+            import { readdirSync, statSync } from 'fs';
+            const dirs = readdirSync('.')
+              .filter(f => statSync(f).isDirectory() && f.startsWith('example_'))
+              .map(f => f + '/');
+            console.log(JSON.stringify(dirs));
+          ")
+          echo "matrix=${matrix}" >> $GITHUB_OUTPUT
+          end=$(date +%s%3N)
+          echo "Duration: $((end - start))ms"
+
+      - name: Generate Matrix (ripgrep)
+        if: matrix.tool == 'ripgrep'
+        id: matrix
+        run: |
+          start=$(date +%s%3N)
+          echo "matrix=$(rg --files | grep '^example_' | sed 's|/.*|/|' | sort -u | jq -Rnc '[inputs]')" >> $GITHUB_OUTPUT
           end=$(date +%s%3N)
           echo "Duration: $((end - start))ms"
 
